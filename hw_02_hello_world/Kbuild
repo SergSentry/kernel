@@ -1,0 +1,4 @@
+MODULE_NAME := hello
+
+obj-m += src/$(MODULE_NAME).o
+$(MODULE_NAME)-objs := hello.o
