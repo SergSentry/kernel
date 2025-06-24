@@ -5,12 +5,13 @@ EX_STACK_PATH := $(PWD)/ex_stack
 EX_QUEUE_PATH := $(PWD)/ex_queue
 EX_BITMAP_PATH := $(PWD)/ex_bitmap
 EX_RB_TREE_PATH := $(PWD)/ex_rb_tree
+EX_HASH_PATH := $(PWD)/ex_hash
 
 all: format clear build check
 
-build: ex_list ex_stack ex_queue ex_bitmap ex_rb_tree
+build: ex_list ex_stack ex_queue ex_bitmap ex_rb_tree ex_hash
 
-check: ex_list_check ex_stack_check ex_queue_check ex_bitmap_check ex_rb_tree_check
+check: ex_list_check ex_stack_check ex_queue_check ex_bitmap_check ex_rb_tree_check ex_hash_check
 
 ex_list:
 	@echo "\nBuild ex_list..."
@@ -52,6 +53,14 @@ ex_rb_tree_check:
 	@echo "\nCheck ex_rb_tree..."
 	$(MAKE) -C $(EX_RB_TREE_PATH) check
 
+ex_hash:
+	@echo "\nBuild ex_hash..."
+	$(MAKE) -C $(EX_HASH_PATH) kbuild
+
+ex_hash_check:
+	@echo "\nCheck ex_hash..."
+	$(MAKE) -C $(EX_HASH_PATH) check
+
 format:
 	@echo "\nFormating up..."
 	$(MAKE) -C $(EX_LIST_PATH) format
@@ -59,6 +68,7 @@ format:
 	$(MAKE) -C $(EX_QUEUE_PATH) format
 	$(MAKE) -C $(EX_BITMAP_PATH) format
 	$(MAKE) -C $(EX_RB_TREE_PATH) format
+	$(MAKE) -C $(EX_HASH_PATH) format
 
 clean:
 	@echo "\nCleaning up..."
@@ -67,5 +77,6 @@ clean:
 	$(MAKE) -C $(EX_QUEUE_PATH) clean
 	$(MAKE) -C $(EX_BITMAP_PATH) clean
 	$(MAKE) -C $(EX_RB_TREE_PATH) format
+	$(MAKE) -C $(EX_HASH_PATH) clean
 
-.PHONY: all build check format clean ex_list ex_list_check ex_stack ex_stack_check ex_queue ex_queue_check  ex_bitmap ex_bitmap_check ex_rb_tree ex_rb_tree_check
+.PHONY: all build check format clean ex_list ex_list_check ex_stack ex_stack_check ex_queue ex_queue_check  ex_bitmap ex_bitmap_check ex_rb_tree ex_rb_tree_check ex_hash ex_hash_check
