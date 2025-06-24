@@ -1,0 +1,3 @@
+MODULE_NAME := ex_bin_search
+
+obj-m += src/$(MODULE_NAME).o
