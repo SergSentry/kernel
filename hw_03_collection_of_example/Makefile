@@ -1,0 +1,27 @@
+PWD := $(shell pwd)
+
+EX_LIST_PATH := $(PWD)/ex_list
+
+all: format clear build check
+
+build: ex_list
+
+check: ex_list_check
+
+ex_list:
+	@echo "\nBuild ex_list..."
+	$(MAKE) -C $(EX_LIST_PATH) kbuild
+
+ex_list_check:
+	@echo "\nCheck ex_list..."
+	$(MAKE) -C $(EX_LIST_PATH) check
+
+format:
+	@echo "\nFormating up..."
+	$(MAKE) -C $(EX_LIST_PATH) format
+
+clean:
+	@echo "\nCleaning up..."
+	$(MAKE) -C $(EX_LIST_PATH) clean
+
+.PHONY: all build check format clean ex_list ex_list_check
