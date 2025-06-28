@@ -86,7 +86,7 @@ clean:
 	$(MAKE) -C $(EX_STACK_PATH) clean
 	$(MAKE) -C $(EX_QUEUE_PATH) clean
 	$(MAKE) -C $(EX_BITMAP_PATH) clean
-	$(MAKE) -C $(EX_RB_TREE_PATH) format
+	$(MAKE) -C $(EX_RB_TREE_PATH) clean
 	$(MAKE) -C $(EX_HASH_PATH) clean
 	$(MAKE) -C $(EX_BIN_SEARCH_PATH) clean
 
