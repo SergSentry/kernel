@@ -1,0 +1,3 @@
+MODULE_NAME := ex_bitmap
+
+obj-m += src/$(MODULE_NAME).o

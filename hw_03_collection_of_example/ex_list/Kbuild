@@ -1,0 +1,3 @@
+MODULE_NAME := ex_list
+
+obj-m += src/$(MODULE_NAME).o
