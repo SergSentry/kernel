@@ -8,7 +8,7 @@ EX_RB_TREE_PATH := $(PWD)/ex_rb_tree
 EX_HASH_PATH := $(PWD)/ex_hash
 EX_BIN_SEARCH_PATH := $(PWD)/ex_bin_search
 
-all: format clear build check
+all: format clean build check
 
 build: ex_list ex_stack ex_queue ex_bitmap ex_rb_tree ex_hash ex_bin_search
 
