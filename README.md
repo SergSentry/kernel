@@ -139,3 +139,21 @@ OTUS course  homework "Linux Kernel Development"
 * ex_semaphore.ko
 
 * ex_rwlock.ko
+
+
+<br>
+
+## HW_05_deferred_exec_mech
+
+### Домашнее задание
+
+Написать модули ядра использующие механизмы отложенного выполнения (Tasklets, Workqueue)
+
+#### Цель:
+
+Написать примеры работы с механизмами отложенного выполнения в ядре Linux.
+Необходимо написать модули:
+
+* ex_tasklet.ko
+
+* ex_workqueue.ko
