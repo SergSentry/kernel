@@ -1,0 +1,3 @@
+MODULE_NAME := ex_workqueue
+
+obj-m += src/$(MODULE_NAME).o
