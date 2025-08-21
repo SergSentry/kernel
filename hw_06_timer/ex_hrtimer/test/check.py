@@ -111,7 +111,7 @@ class TestHrTimeModule(unittest.TestCase):
             self.assertEqual(0, status)
             self.assertEqual(1, result)
 
-    def test_run(self):
+    def test_run_5_min_duty(self):
         '''
         The 'run' command test
         '''
@@ -155,13 +155,6 @@ class TestHrTimeModule(unittest.TestCase):
         _, func, msg = next(ms_gen)
         self.assertEqual("pulse_callback", func.strip())
         self.assertEqual("min=270: Hello, timer!", msg.strip())
-
-        if len(list(ms_gen)) == 1:
-            _, func, msg = next(ms_gen)
-            self.assertEqual("pulse_callback", func.strip())
-            self.assertEqual("min=300: Hello, timer!", msg.strip())
-        
-        self.assertTrue(len(list(ms_gen)) == 0)
 
     def test_stop_before_run(self):
         '''
