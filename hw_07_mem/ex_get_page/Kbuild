@@ -1,0 +1,3 @@
+MODULE_NAME := ex_get_page
+
+obj-m += src/$(MODULE_NAME).o
