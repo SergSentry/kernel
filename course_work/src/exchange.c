@@ -55,9 +55,18 @@ static int __init exchange_init(void) {
 
   int ret;
 
-  alloc_chrdev_region(&exchange_dev, 0, MAX_REQUESTS, DEVICE_NAME);
+  int err = alloc_chrdev_region(&exchange_dev, 0, MAX_REQUESTS, DEVICE_NAME);
+  if (err < 0) {
+    pr_err("Failed to register the primary device number\n");
+    return err;
+  }
 
   exchange_class = class_create(THIS_MODULE, DEVICE_NAME);
+  if (IS_ERR(exchange_class)) {
+    unregister_chrdev(MAJOR(exchange_dev), DEVICE_NAME);
+    pr_err("Class creation failed\n");
+    return PTR_ERR(exchange_class);
+  }
 
   for (int i = 0; i < MAX_REQUESTS; ++i) {
     device_create(exchange_class, NULL, MKDEV(MAJOR(exchange_dev), i), NULL,
@@ -69,6 +78,7 @@ static int __init exchange_init(void) {
   ret = cdev_add(&exchange_cdev, exchange_dev, MAX_REQUESTS);
   if (ret < 0) {
     unregister_chrdev_region(exchange_dev, MAX_REQUESTS);
+    pr_err("Failed to add character device\n");
     return ret;
   }
 
