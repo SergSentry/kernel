@@ -5,6 +5,8 @@ import subprocess
 class ExchangeModule:
     MODULE_FILE_NAME = 'exchange.ko'
     MODULE_NAME = 'exchange'
+    DEVICE_NAME = 'exchange'
+    DEVICE_PATH = f"/dev/{DEVICE_NAME}0"
     
     def __init__(self, path: str = ""):
         self.__path = path
@@ -24,6 +26,9 @@ class ExchangeModule:
             return False
         params = result.stdout.decode("utf-8").split(" ")
         return ExchangeModule.MODULE_NAME in params
+
+    def has_device_exist(self) -> bool:
+        return os.path.exists(ExchangeModule.DEVICE_PATH)
 
     def __unload(self):
         if self.has_loaded():
