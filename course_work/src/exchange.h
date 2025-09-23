@@ -10,6 +10,8 @@
 #ifndef EX_EXCHANGE_H
 #define EX_EXCHANGE_H
 
+#define DEVICE_NAME "exchange"
+#define MAX_REQUESTS 8
 
 MODULE_DESCRIPTION("OTUS course homework 'Linux Kernel Development'\n\t\tTask: "
                    "course work\n\t\tModule: exchange");
