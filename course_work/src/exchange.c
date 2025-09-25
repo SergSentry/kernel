@@ -72,7 +72,7 @@ static int __init exchange_init(void) {
 
   int ret;
 
-  int err = alloc_chrdev_region(&exchange_dev, 0, MAX_REQUESTS, DEVICE_NAME);
+  int err = alloc_chrdev_region(&exchange_dev, 0, max_request, DEVICE_NAME);
   if (err < 0) {
     pr_err("Failed to register the primary device number\n");
     return err;
@@ -85,16 +85,16 @@ static int __init exchange_init(void) {
     return PTR_ERR(exchange_class);
   }
 
-  for (int i = 0; i < MAX_REQUESTS; ++i) {
+  for (int i = 0; i < max_request; ++i) {
     device_create(exchange_class, NULL, MKDEV(MAJOR(exchange_dev), i), NULL,
                   DEVICE_NAME "%d", i);
   }
 
   cdev_init(&exchange_cdev, &exchange_fops);
 
-  ret = cdev_add(&exchange_cdev, exchange_dev, MAX_REQUESTS);
+  ret = cdev_add(&exchange_cdev, exchange_dev, max_request);
   if (ret < 0) {
-    unregister_chrdev_region(exchange_dev, MAX_REQUESTS);
+    unregister_chrdev_region(exchange_dev, max_request);
     pr_err("Failed to add character device\n");
     return ret;
   }
@@ -104,13 +104,13 @@ static int __init exchange_init(void) {
 }
 
 static void __exit exchange_exit(void) {
-  for (int i = 0; i < MAX_REQUESTS; ++i)
+  for (int i = 0; i < max_request; ++i)
     device_destroy(exchange_class, MKDEV(MAJOR(exchange_dev), i));
 
   class_destroy(exchange_class);
   cdev_del(&exchange_cdev);
 
-  unregister_chrdev_region(exchange_dev, MAX_REQUESTS);
+  unregister_chrdev_region(exchange_dev, max_request);
 
   pr_info("exit\n");
 }
