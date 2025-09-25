@@ -1,5 +1,7 @@
 import os
 import subprocess
+from fcntl import ioctl
+import struct
 
 
 class ExchangeModule:
@@ -7,6 +9,9 @@ class ExchangeModule:
     MODULE_NAME = 'exchange'
     DEVICE_NAME = 'exchange'
     DEVICE_PATH = f"/dev/{DEVICE_NAME}0"
+    DEFAULT_MAX_REQUESTS  = 8
+    DEVICE_IOCTL_MAGIC = ord('>')
+    EXCHANGE_IOCTL_GET_MAX_REQUESTS = 0x80043E00
     
     def __init__(self, path: str = ""):
         self.__path = path
@@ -26,6 +31,17 @@ class ExchangeModule:
             return False
         params = result.stdout.decode("utf-8").split(" ")
         return ExchangeModule.MODULE_NAME in params
+
+    def get_max_request(self) -> int:
+        if self.has_loaded():
+            fd = os.open(ExchangeModule.DEVICE_PATH, os.O_RDWR)
+        
+            try:
+                buffer = bytearray(4)
+                result = ioctl(fd, ExchangeModule.EXCHANGE_IOCTL_GET_MAX_REQUESTS, buffer, True)
+                return struct.unpack("i", buffer)[0]
+            finally:
+                os.close(fd)
 
     def has_device_exist(self) -> bool:
         return os.path.exists(ExchangeModule.DEVICE_PATH)
