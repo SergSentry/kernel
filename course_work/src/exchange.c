@@ -20,6 +20,7 @@
 static dev_t exchange_dev = MKDEV(0, 0);
 static struct class *exchange_class;
 static struct cdev exchange_cdev;
+static int max_request = MAX_REQUESTS;
 
 static int device_open(struct inode *inode, struct file *filp) {
   pr_info("Device opened\n");
@@ -43,13 +44,29 @@ static ssize_t device_write(struct file *filp, const char __user *buffer,
   return count;
 }
 
-static const struct file_operations exchange_fops = {
-    .owner = THIS_MODULE,
-    .open = device_open,
-    .read = device_read,
-    .write = device_write,
-    .release = device_release,
-};
+static long device_ioctl(struct file *file, unsigned int cmd,
+                         unsigned long arg) {
+  switch (cmd) {
+  case EXCHANGE_IOCTL_GET_MAX_REQUESTS: {
+    if (copy_to_user((void __user *)arg, &max_request, sizeof(int)) != 0)
+      return -EFAULT;
+    pr_info("ioctl: get_max_request is %d\n", max_request);
+    break;
+  }
+
+  default:
+    return -ENOTTY;
+  }
+  return 0;
+}
+
+static const struct file_operations exchange_fops = {.owner = THIS_MODULE,
+                                                     .open = device_open,
+                                                     .read = device_read,
+                                                     .write = device_write,
+                                                     .release = device_release,
+                                                     .unlocked_ioctl =
+                                                         device_ioctl};
 
 static int __init exchange_init(void) {
 
