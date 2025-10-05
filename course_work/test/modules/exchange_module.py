@@ -8,7 +8,7 @@ class ExchangeModule:
     MODULE_FILE_NAME = 'exchange.ko'
     MODULE_NAME = 'exchange'
     DEVICE_NAME = 'exchange'
-    DEVICE_PATH = f"/dev/{DEVICE_NAME}0"
+    DEVICE_PATH = f"/dev/{DEVICE_NAME}"
     DEFAULT_MAX_REQUESTS  = 8
     DEVICE_IOCTL_MAGIC = ord('>')
     EXCHANGE_IOCTL_GET_MAX_REQUESTS = 0x80043E00
