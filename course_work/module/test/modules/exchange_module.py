@@ -9,9 +9,9 @@ class ExchangeModule:
     MODULE_NAME = 'exchange'
     DEVICE_NAME = 'exchange'
     DEVICE_PATH = f"/dev/{DEVICE_NAME}"
-    DEFAULT_MAX_REQUESTS  = 8
+    DEFAULT_WORK_MODE  = 0
     DEVICE_IOCTL_MAGIC = ord('>')
-    EXCHANGE_IOCTL_GET_MAX_REQUESTS = 0x80043E00
+    EXCHANGE_IOCTL_GET_WORK_MODE = 0x80043E00
     
     def __init__(self, path: str = ""):
         self.__path = path
@@ -32,13 +32,13 @@ class ExchangeModule:
         params = result.stdout.decode("utf-8").split(" ")
         return ExchangeModule.MODULE_NAME in params
 
-    def get_max_request(self) -> int:
+    def get_work_mode(self) -> int:
         if self.has_loaded():
             fd = os.open(ExchangeModule.DEVICE_PATH, os.O_RDWR)
         
             try:
                 buffer = bytearray(4)
-                result = ioctl(fd, ExchangeModule.EXCHANGE_IOCTL_GET_MAX_REQUESTS, buffer, True)
+                result = ioctl(fd, ExchangeModule.EXCHANGE_IOCTL_GET_WORK_MODE, buffer, True)
                 return struct.unpack("i", buffer)[0]
             finally:
                 os.close(fd)

@@ -115,12 +115,12 @@ class TestExchangeModule(unittest.TestCase):
             self.assertEqual("device_release", func.strip())
             self.assertEqual("Device closed", msg.strip())
     
-    def test_ioctl_get_max_request(self):
+    def test_ioctl_get_work_mode(self):
         '''
-        test ioctl function  get_max_request
+        test ioctl function get_work_mode
         '''
         with ExchangeModule(path=MODULE_PATH) as exchangeModule:
             self.assertTrue(exchangeModule.has_device_exist())
 
-            max_request = exchangeModule.get_max_request()
-            self.assertEqual(ExchangeModule.DEFAULT_MAX_REQUESTS, max_request)
+            work_mode = exchangeModule.get_work_mode()
+            self.assertEqual(ExchangeModule.DEFAULT_WORK_MODE, work_mode)

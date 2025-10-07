@@ -15,12 +15,13 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
+#include "include/exchange/api.h"
 #include "exchange.h"
 
 static dev_t exchange_dev = MKDEV(0, 0);
 static struct class *exchange_class;
 static struct cdev exchange_cdev;
-static int max_request = MAX_REQUESTS;
+static int work_mode = EXCHANGE_UNICAST;
 
 static int device_open(struct inode *inode, struct file *filp) {
   pr_info("Device opened\n");
@@ -47,10 +48,10 @@ static ssize_t device_write(struct file *filp, const char __user *buffer,
 static long device_ioctl(struct file *file, unsigned int cmd,
                          unsigned long arg) {
   switch (cmd) {
-  case EXCHANGE_IOCTL_GET_MAX_REQUESTS: {
-    if (copy_to_user((void __user *)arg, &max_request, sizeof(int)) != 0)
+  case EXCHANGE_IOCTL_GET_WORK_MODE: {
+    if (copy_to_user((void __user *)arg, &work_mode, sizeof(int)) != 0)
       return -EFAULT;
-    pr_info("ioctl: get_max_request is %d\n", max_request);
+    pr_info("ioctl: mode is %d\n", work_mode);
     break;
   }
 

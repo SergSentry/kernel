@@ -10,12 +10,6 @@
 #ifndef EX_EXCHANGE_H
 #define EX_EXCHANGE_H
 
-#define DEVICE_NAME "exchange"
-#define MAX_REQUESTS 8
-
-#define EXCHANGE_IOCTL_MAGIC '>'
-#define EXCHANGE_IOCTL_GET_MAX_REQUESTS _IOR(EXCHANGE_IOCTL_MAGIC, 0, int)
-
 MODULE_DESCRIPTION("OTUS course homework 'Linux Kernel Development'\n\t\tTask: "
                    "course work\n\t\tModule: exchange");
 
