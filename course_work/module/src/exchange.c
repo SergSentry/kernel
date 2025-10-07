@@ -23,6 +23,44 @@ static struct class *exchange_class;
 static struct cdev exchange_cdev;
 static int work_mode = EXCHANGE_UNICAST;
 
+static int param_set_work_mode_handler(const char *val, const struct kernel_param *kp)
+{
+	int res;
+	int new_value;
+
+	if (!val || strlen(val) == 0) {
+		pr_err("Param error: %s value is empty.\n", kp->name);
+		return -EINVAL;
+	}
+
+	res = kstrtoint(val, 10, &new_value);
+	if (res) {
+		pr_err("Param error: %s value is not a decimal number\n",
+		       kp->name);
+		return res;
+	}
+
+	if (new_value < 0 || new_value > EXCHANGE_BROADCAST) {
+		pr_err("Param error: %s out of range (0, %d)\n", kp->name,
+		       EXCHANGE_BROADCAST);
+		return -EINVAL;
+	}
+
+	*((unsigned int *)kp->arg) = new_value;
+	pr_info("Set param: %s=%d\n", kp->name, new_value);
+	return 0;
+}
+
+static const struct kernel_param_ops work_mode_ops = {
+	.set = param_set_work_mode_handler,
+	.get = param_get_int,
+};
+
+module_param_cb(work_mode, &work_mode_ops, &work_mode,
+		S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+MODULE_PARM_DESC(work_mode, "Exchange work mode. 0 - UNICAST. 1 - BROADCAST");
+
+
 static int device_open(struct inode *inode, struct file *filp) {
   pr_info("Device opened\n");
   return 0;
