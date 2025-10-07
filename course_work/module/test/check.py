@@ -107,7 +107,6 @@ class TestExchangeModule(unittest.TestCase):
                 self.assertEqual("device_open", func.strip())
                 self.assertEqual("Device opened", msg.strip())
                 device.write("hello".encode())
-                sleep(1)
                 _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_write", last=1))
                 self.assertEqual("device_write", func.strip())
                 self.assertEqual("Device write", msg.strip())  
