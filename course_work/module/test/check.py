@@ -38,6 +38,26 @@ class TestExchangeModule(unittest.TestCase):
 
             self.assertEqual("exchange_init", func.strip())
             self.assertEqual("init", msg.strip())
+    
+    def test_default_work_mode(self):
+        '''
+        Checking the default work mode
+        '''
+        with ExchangeModule(path=MODULE_PATH) as exchangeModule:
+            self.assertTrue(exchangeModule.has_device_exist())
+            target_data = exchangeModule._read_param(ExchangeModule.MODULE_PARAM_WORK_MODE)
+            self.assertEqual(0, target_data)
+
+    def test_permission(self):
+        '''
+        Check permission for parameters file /sys/module/<MODULE_NAME>/parameters/<NAME>
+        '''
+        with ExchangeModule(path=MODULE_PATH) as exchangeModule:
+            self.assertTrue(exchangeModule.has_device_exist())
+
+            work_mode_file = os.stat(exchangeModule._get_parameter_path(ExchangeModule.MODULE_PARAM_WORK_MODE))
+        
+        self.assertTrue(bool(work_mode_file.st_mode & (stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH)))
 
     def test_exit_message(self):
         '''
@@ -73,6 +93,18 @@ class TestExchangeModule(unittest.TestCase):
             _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
             self.assertEqual("device_release", func.strip())
             self.assertEqual("Device closed", msg.strip())
+
+    def test_insmod_argument(self):
+        '''
+        Module loading test with specified parameters
+        '''
+        exchangeModule = ExchangeModule(path=MODULE_PATH)
+        
+        exchangeModule._load(path=MODULE_PATH, work_mode=1)
+        self.assertTrue(exchangeModule.has_loaded())
+        
+        target_data = exchangeModule._read_param(ExchangeModule.MODULE_PARAM_WORK_MODE)
+        self.assertEqual(1, target_data)
 
     def test_dev_read_messages(self):
         '''
@@ -122,5 +154,5 @@ class TestExchangeModule(unittest.TestCase):
         with ExchangeModule(path=MODULE_PATH) as exchangeModule:
             self.assertTrue(exchangeModule.has_device_exist())
 
-            work_mode = exchangeModule.get_work_mode()
+            work_mode = exchangeModule.get_ioctl_work_mode()
             self.assertEqual(ExchangeModule.DEFAULT_WORK_MODE, work_mode)

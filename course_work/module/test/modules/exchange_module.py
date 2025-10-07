@@ -11,6 +11,7 @@ class ExchangeModule:
     DEVICE_PATH = f"/dev/{DEVICE_NAME}"
     DEFAULT_WORK_MODE  = 0
     DEVICE_IOCTL_MAGIC = ord('>')
+    MODULE_PARAM_WORK_MODE = 'work_mode'
     EXCHANGE_IOCTL_GET_WORK_MODE = 0x80043E00
     
     def __init__(self, path: str = ""):
@@ -32,7 +33,7 @@ class ExchangeModule:
         params = result.stdout.decode("utf-8").split(" ")
         return ExchangeModule.MODULE_NAME in params
 
-    def get_work_mode(self) -> int:
+    def get_ioctl_work_mode(self) -> int:
         if self.has_loaded():
             fd = os.open(ExchangeModule.DEVICE_PATH, os.O_RDWR)
         
@@ -43,8 +44,15 @@ class ExchangeModule:
             finally:
                 os.close(fd)
 
+    def get_param_work_mode(self) -> int:
+        if self.has_loaded():
+            _read_param(_get_parameter_path(ExchangeModule.MODULE_PARAM_WORK_MODE))
+
     def has_device_exist(self) -> bool:
         return os.path.exists(ExchangeModule.DEVICE_PATH)
+
+    def _get_parameter_path(self, name):
+        return f'/sys/module/{ExchangeModule.MODULE_NAME}/parameters/{name}'
 
     def __unload(self):
         if self.has_loaded():
@@ -61,3 +69,24 @@ class ExchangeModule:
         module_full_path = os.path.abspath(f"{path}/{ExchangeModule.MODULE_FILE_NAME}")
         result = subprocess.run([f'insmod {module_full_path}'], stdout=subprocess.PIPE, shell=True)
         return result.stderr is not None
+
+    def _load(self, path: str, work_mode:int) -> bool:
+        self.__unload()
+        module_full_path = os.path.abspath(f"{path}/{ExchangeModule.MODULE_FILE_NAME}")
+        module_param = f"{ExchangeModule.MODULE_PARAM_WORK_MODE}={work_mode}"
+        result = subprocess.run([f'insmod {module_full_path} {module_param}'], stdout=subprocess.PIPE, shell=True)
+        return result.stderr is not None
+
+    def _read_param(self, param_name: str):
+        if param_name not in {ExchangeModule.MODULE_PARAM_WORK_MODE}:
+            raise NameError(param_name)
+
+        sys_path = self._get_parameter_path(param_name)
+        if not os.path.exists(sys_path):
+            raise FileNotFoundError(sys_path)
+
+        with open(sys_path, "br") as read_file:
+            result = read_file.readline()
+
+        value = result.decode("utf-8").strip()
+        return int(value) if value.isdigit() else value
