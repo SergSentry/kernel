@@ -4,10 +4,12 @@ import os
 import time
 import stat
 import unittest
+import subprocess
 from time import sleep
 
 from test.modules.exchange_module import ExchangeModule
 from test.tools.dmesg import Dmesg
+from test.tools.osfile import OsFile
 
 MODULE_BUILD_DIR = "./build"
 MODULE_PATH = f'{MODULE_BUILD_DIR}'
@@ -113,11 +115,12 @@ class TestExchangeModule(unittest.TestCase):
         with ExchangeModule(path=MODULE_PATH) as exchangeModule:
             self.assertTrue(exchangeModule.has_device_exist())
 
-            with open(ExchangeModule.DEVICE_PATH, "rb") as device:
+            Dmesg.clear()
+            with OsFile(ExchangeModule.DEVICE_PATH) as device:
                 _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
                 self.assertEqual("device_open", func.strip())
                 self.assertEqual("Device opened", msg.strip())
-                response = device.read()
+                response = device.read(10)
                 sleep(1)
                 _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_read", last=1))
                 self.assertEqual("device_read", func.strip())
@@ -133,12 +136,15 @@ class TestExchangeModule(unittest.TestCase):
         '''
         with ExchangeModule(path=MODULE_PATH) as exchangeModule:
             self.assertTrue(exchangeModule.has_device_exist())
-
-            with open(ExchangeModule.DEVICE_PATH, "wb") as device:
+            
+            Dmesg.clear()
+            with OsFile(ExchangeModule.DEVICE_PATH) as device:
                 _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
                 self.assertEqual("device_open", func.strip())
                 self.assertEqual("Device opened", msg.strip())
+                
                 device.write("hello".encode())
+                sleep(1)
                 _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_write", last=1))
                 self.assertEqual("device_write", func.strip())
                 self.assertEqual("Device write", msg.strip())  
@@ -156,3 +162,21 @@ class TestExchangeModule(unittest.TestCase):
 
             work_mode = exchangeModule.get_ioctl_work_mode()
             self.assertEqual(ExchangeModule.DEFAULT_WORK_MODE, work_mode)
+
+    def run_command(self, command):
+        return subprocess.run(command, shell=True, capture_output=True, text=True)
+
+    def test_proc_session_pids(self):
+        '''
+        test write to proc device active session pid
+        '''
+        with ExchangeModule(path=MODULE_PATH) as exchangeModule:
+            self.assertTrue(exchangeModule.has_device_exist())
+            
+            with OsFile(ExchangeModule.DEVICE_PATH) as device:
+                result = self.run_command(f"cat {ExchangeModule.PROC_PATH}")
+                self.assertEqual(str(os.getpid()), result.stdout.strip())
+
+                self.run_command(f"echo '' > {ExchangeModule.PROC_PATH}")
+                result = self.run_command(f"cat {ExchangeModule.PROC_PATH}")
+                self.assertFalse(result.stdout.strip())

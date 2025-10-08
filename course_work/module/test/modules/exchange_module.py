@@ -9,6 +9,7 @@ class ExchangeModule:
     MODULE_NAME = 'exchange'
     DEVICE_NAME = 'exchange'
     DEVICE_PATH = f"/dev/{DEVICE_NAME}"
+    PROC_PATH = f"/proc/{DEVICE_NAME}"
     DEFAULT_WORK_MODE  = 0
     DEVICE_IOCTL_MAGIC = ord('>')
     MODULE_PARAM_WORK_MODE = 'work_mode'
@@ -22,7 +23,7 @@ class ExchangeModule:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.__unload();
+        self.__unload()
 
     def has_loaded(self) -> bool:
         result = subprocess.run(
