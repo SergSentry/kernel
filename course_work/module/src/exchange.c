@@ -11,6 +11,7 @@
 
 #include <linux/cdev.h>
 #include <linux/fs.h>
+#include <linux/hashtable.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
@@ -37,6 +38,17 @@ struct exchange_list {
   spinlock_t lock;
 };
 
+struct client_data {
+  pid_t pid;
+  struct exchange_list output_queue;
+  struct hlist_node node;
+};
+
+struct client_hashtable {
+  DECLARE_HASHTABLE(table, 10);
+  spinlock_t lock;
+};
+
 struct statistics_data {
   unsigned int total_requests;
   unsigned int dropped_requests;
@@ -46,6 +58,7 @@ struct statistics_data {
 struct exchange_device {
   struct exchange_list active_sessions;
   struct statistics_data statistics;
+  struct client_hashtable clients;
 };
 
 static struct exchange_device device;
@@ -97,6 +110,17 @@ static void init_statistic(struct statistics_data *sd) {
   sd->total_requests = 0;
   sd->dropped_requests = 0;
   spin_lock_init(&sd->lock);
+}
+
+void init_client_hashtable(struct client_hashtable *clients) {
+  hash_init(clients->table);
+  spin_lock_init(&clients->lock);
+}
+
+void setup_device(struct exchange_device *dev) {
+  init_client_hashtable(&dev->clients);
+  init_exchange_list(&dev->active_sessions);
+  init_statistic(&dev->statistics);
 }
 
 static void add_session(struct exchange_list *sl, pid_t pid) {
@@ -232,21 +256,79 @@ static void __exit sysfs_unregister(void) {
   kobject_put(sysfs_kobj);
 }
 
+static struct client_data *add_new_client(struct client_hashtable *table,
+                                          pid_t pid) {
+  struct client_data *new_client =
+      kmalloc(sizeof(struct client_data), GFP_KERNEL);
+      
+  if (!new_client)
+    return ERR_PTR(-ENOMEM);
+
+  new_client->pid = pid;
+  init_exchange_list(&new_client->output_queue);
+
+  spin_lock(&table->lock);
+  hash_add(table->table, &new_client->node, pid);
+  spin_unlock(&table->lock);
+
+  pr_info("Added a client, pid:%d\n", pid);
+  return new_client;
+}
+
+static void remove_client(struct client_hashtable *table, pid_t pid) {
+  struct client_data *target;
+
+  spin_lock(&table->lock);
+  hash_for_each_possible(table->table, target, node, pid) {
+    if (target->pid == pid) {
+      hash_del(&target->node);
+      kfree(target);
+      pr_info("Client removed, pid:%d\n", pid);
+      break;
+    }
+  }
+  spin_unlock(&table->lock);
+}
+
+static struct client_data *find_client_by_pid(struct client_hashtable *table,
+                                              pid_t target_pid) {
+  struct client_data *pos = NULL;
+
+  spin_lock(&table->lock);
+  hash_for_each_possible(table->table, pos, node, target_pid) {
+    if (pos->pid == target_pid) {
+      pr_info("Client has been found, pid:%d\n", target_pid);
+      break;
+    }
+  }
+  spin_unlock(&table->lock);
+  return pos;
+}
+
 static int device_open(struct inode *inode, struct file *filp) {
   pr_info("Device opened\n");
 
+  filp->private_data = &device;
+
   add_session(&device.active_sessions, current->pid);
 
-  filp->private_data = &device;
+  struct client_data *current_client =
+      find_client_by_pid(&device.clients, current->pid);
+
+  if (!current_client) {
+    current_client = add_new_client(&device.clients, current->pid);
+  }
 
   return 0;
 }
 
 static int device_release(struct inode *inode, struct file *filp) {
-  pr_info("Device closed\n");
-
   struct exchange_device *device = filp->private_data;
+
   remove_session(&device->active_sessions, current->pid);
+  remove_client(&device->clients, current->pid);
+
+  pr_info("Device closed\n");
   return 0;
 }
 
@@ -327,8 +409,7 @@ static int __init exchange_init(void) {
 
   device_create(exchange_class, NULL, exchange_dev, NULL, DEVICE_NAME);
 
-  init_exchange_list(&device.active_sessions);
-  init_statistic(&device.statistics);
+  setup_device(&device);
 
   pr_info("init\n");
   return 0;
