@@ -80,6 +80,23 @@ class TestExchangeModule(unittest.TestCase):
         with ExchangeModule(path=MODULE_PATH) as exchangeModule:
             self.assertTrue(exchangeModule.has_device_exist())
 
+
+    def check_open(self):
+        _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_open", last=1))
+        self.assertEqual("device_open", func.strip())
+        self.assertEqual("Device opened", msg.strip())
+        _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "add_new_client", last=1))
+        self.assertEqual("add_new_client", func.strip())
+        self.assertEqual(f"Added a client, pid:{str(os.getpid())}", msg.strip())
+
+    def check_close(self):
+        _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "remove_client", last=1))
+        self.assertEqual("remove_client", func.strip())
+        self.assertEqual(f"Client removed, pid:{str(os.getpid())}", msg.strip())
+        _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_release", last=1))
+        self.assertEqual("device_release", func.strip())
+        self.assertEqual("Device closed", msg.strip())
+
     def test_dev_open_close_messages(self):
         '''
         Checking message for open and close device 
@@ -88,13 +105,9 @@ class TestExchangeModule(unittest.TestCase):
             self.assertTrue(exchangeModule.has_device_exist())
 
             with open(ExchangeModule.DEVICE_PATH, "wb") as device:
-                _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
-                self.assertEqual("device_open", func.strip())
-                self.assertEqual("Device opened", msg.strip())
+                self.check_open()
             
-            _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
-            self.assertEqual("device_release", func.strip())
-            self.assertEqual("Device closed", msg.strip())
+            self.check_close()
 
     def test_insmod_argument(self):
         '''
@@ -117,18 +130,15 @@ class TestExchangeModule(unittest.TestCase):
 
             Dmesg.clear()
             with OsFile(ExchangeModule.DEVICE_PATH) as device:
-                _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
-                self.assertEqual("device_open", func.strip())
-                self.assertEqual("Device opened", msg.strip())
+                self.check_open()
+
                 response = device.read(10)
                 sleep(1)
                 _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_read", last=1))
                 self.assertEqual("device_read", func.strip())
                 self.assertEqual("Device read", msg.strip())
 
-            _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
-            self.assertEqual("device_release", func.strip())
-            self.assertEqual("Device closed", msg.strip())
+            self.check_close()
 
     def test_dev_write_messages(self):
         '''
@@ -139,9 +149,7 @@ class TestExchangeModule(unittest.TestCase):
             
             Dmesg.clear()
             with OsFile(ExchangeModule.DEVICE_PATH) as device:
-                _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
-                self.assertEqual("device_open", func.strip())
-                self.assertEqual("Device opened", msg.strip())
+                self.check_open()
                 
                 device.write("hello".encode())
                 sleep(1)
@@ -149,9 +157,7 @@ class TestExchangeModule(unittest.TestCase):
                 self.assertEqual("device_write", func.strip())
                 self.assertEqual("Device write", msg.strip())  
                 
-            _, func, msg = next(Dmesg.get_messages(ExchangeModule.MODULE_NAME, last=1))
-            self.assertEqual("device_release", func.strip())
-            self.assertEqual("Device closed", msg.strip())
+            self.check_close()
     
     def test_ioctl_get_work_mode(self):
         '''
