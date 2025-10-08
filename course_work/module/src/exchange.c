@@ -37,8 +37,15 @@ struct exchange_list {
   spinlock_t lock;
 };
 
+struct statistics_data {
+  unsigned int total_requests;
+  unsigned int dropped_requests;
+  spinlock_t lock;
+};
+
 struct exchange_device {
   struct exchange_list active_sessions;
+  struct statistics_data statistics;
 };
 
 static struct exchange_device device;
@@ -84,6 +91,12 @@ MODULE_PARM_DESC(work_mode, "Exchange work mode. 0 - UNICAST. 1 - BROADCAST");
 static void init_exchange_list(struct exchange_list *sl) {
   INIT_LIST_HEAD(&sl->head);
   spin_lock_init(&sl->lock);
+}
+
+static void init_statistic(struct statistics_data *sd) {
+  sd->total_requests = 0;
+  sd->dropped_requests = 0;
+  spin_lock_init(&sd->lock);
 }
 
 static void add_session(struct exchange_list *sl, pid_t pid) {
@@ -175,6 +188,50 @@ static int procfs_register(void) {
 
 static void procfs_unregister(void) { remove_proc_entry("exchange", NULL); }
 
+static struct kobject *sysfs_kobj;
+
+static ssize_t show_stats(struct kobject *kobj, struct kobj_attribute *attr,
+                          char *buf) {
+  ssize_t res;
+  spin_lock(&device.statistics.lock);
+  res = sprintf(buf, "Total requests: %u\nDropped requests: %u\n",
+                device.statistics.total_requests,
+                device.statistics.dropped_requests);
+  spin_unlock(&device.statistics.lock);
+  return res;
+}
+
+static ssize_t store_stats(struct kobject *kobj, struct kobj_attribute *attr,
+                           const char *buf, size_t count) {
+  spin_lock(&device.statistics.lock);
+  device.statistics.total_requests = 0;
+  device.statistics.dropped_requests = 0;
+  spin_unlock(&device.statistics.lock);
+  return count;
+}
+
+static struct kobj_attribute stats_attr =
+    __ATTR(statistics, 0644, show_stats, store_stats);
+
+static struct attribute *attrs[] = {&stats_attr.attr, NULL};
+
+static struct attribute_group attr_group = {
+    .attrs = attrs,
+};
+
+static int __init sysfs_register(void) {
+  sysfs_kobj = kobject_create_and_add("exchange", kernel_kobj);
+  if (!sysfs_kobj)
+    return -ENOMEM;
+
+  return sysfs_create_group(sysfs_kobj, &attr_group);
+}
+
+static void __exit sysfs_unregister(void) {
+  sysfs_remove_group(sysfs_kobj, &attr_group);
+  kobject_put(sysfs_kobj);
+}
+
 static int device_open(struct inode *inode, struct file *filp) {
   pr_info("Device opened\n");
 
@@ -232,6 +289,19 @@ static const struct file_operations exchange_fops = {.owner = THIS_MODULE,
 static int __init exchange_init(void) {
 
   int ret;
+
+  ret = procfs_register();
+  if (ret < 0) {
+    pr_err("Failed to register in ProcFS\n");
+    return ret;
+  }
+
+  ret = sysfs_register();
+  if (ret < 0) {
+    pr_err("Failed to register in SysFS\n");
+    return ret;
+  }
+
   int err = alloc_chrdev_region(&exchange_dev, 0, 1, DEVICE_NAME);
   if (err < 0) {
     pr_err("Failed to register the primary device number\n");
@@ -257,19 +327,15 @@ static int __init exchange_init(void) {
 
   device_create(exchange_class, NULL, exchange_dev, NULL, DEVICE_NAME);
 
-  ret = procfs_register();
-  if (ret < 0) {
-    pr_err("Failed to register in ProcFS\n");
-    return ret;
-  }
-
   init_exchange_list(&device.active_sessions);
+  init_statistic(&device.statistics);
 
   pr_info("init\n");
   return 0;
 }
 
 static void __exit exchange_exit(void) {
+  sysfs_unregister();
   procfs_unregister();
 
   remove_sessions(&device.active_sessions);
