@@ -180,3 +180,17 @@ class TestExchangeModule(unittest.TestCase):
                 self.run_command(f"echo '' > {ExchangeModule.PROC_PATH}")
                 result = self.run_command(f"cat {ExchangeModule.PROC_PATH}")
                 self.assertFalse(result.stdout.strip())
+
+    def test_read_sysfs_statistic_param(self):
+        '''
+        test read statistic from sysfs
+        '''
+        with ExchangeModule(path=MODULE_PATH) as exchangeModule:
+            self.assertTrue(exchangeModule.has_device_exist())
+            
+            with OsFile(ExchangeModule.DEVICE_PATH) as device:
+                with open(ExchangeModule.SYSFS_PATH, "rt") as sysfs_param:
+                    values = sysfs_param.readlines()
+                    self.assertEqual(2, len(values))
+                    self.assertEqual('Total requests: 0\n', values[0])
+                    self.assertEqual('Dropped requests: 0\n', values[1])
