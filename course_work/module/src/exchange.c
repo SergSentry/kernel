@@ -38,8 +38,16 @@ struct exchange_list {
   spinlock_t lock;
 };
 
+struct output_data {
+  char data[EXCHANGE_BUFFER_SIZE];
+  size_t size;
+  unsigned int position;
+  struct list_head list;
+};
+
 struct client_data {
   pid_t pid;
+  struct output_data *output;
   struct exchange_list output_queue;
   struct hlist_node node;
 };
@@ -47,6 +55,7 @@ struct client_data {
 struct request {
   pid_t pid;
   char data[EXCHANGE_BUFFER_SIZE];
+  size_t size;
   struct work_struct work;
   struct list_head list;
 };
@@ -144,6 +153,59 @@ static int setup_device(struct exchange_device *dev) {
   return init_workqueue(dev);
 }
 
+static void free_sessions(struct exchange_list *sl) {
+  struct exchange_session *session, *tmp;
+
+  spin_lock(&sl->lock);
+  list_for_each_entry_safe(session, tmp, &sl->head, list) {
+    list_del(&session->list);
+    kfree(session);
+  }
+  spin_unlock(&sl->lock);
+}
+
+static void free_requests(struct exchange_list *sl) {
+  struct request *req, *tmp;
+  spin_lock(&sl->lock);
+  list_for_each_entry_safe(req, tmp, &sl->head, list) {
+    list_del(&req->list);
+    kfree(req);
+  }
+  spin_unlock(&sl->lock);
+}
+
+static void free_outputs(struct exchange_list *sl) {
+  struct output_data *output, *tmp;
+  spin_lock(&sl->lock);
+  list_for_each_entry_safe(output, tmp, &sl->head, list) {
+    list_del(&output->list);
+    kfree(output);
+  }
+  spin_unlock(&sl->lock);
+}
+
+static void free_clients(struct client_hashtable *table) {
+  struct client_data *target;
+
+  spin_lock(&table->lock);
+  hash_for_each_possible(table->table, target, node, 0) {
+    free_outputs(&target->output_queue);
+    hash_del(&target->node);
+    pr_info("Client removed, pid:%d\n", target->pid);
+    kfree(target);
+  }
+  spin_unlock(&table->lock);
+}
+
+static void free_device(struct exchange_device *dev) {
+  free_sessions(&dev->active_sessions);
+  free_requests(&dev->input_queue);
+  free_clients(&dev->clients);
+
+  flush_workqueue(dev->worker_wq);
+  destroy_workqueue(dev->worker_wq);
+}
+
 static void add_request_statistic(struct statistics_data *sd,
                                   unsigned int count) {
   spin_lock(&sd->lock);
@@ -182,17 +244,6 @@ static void remove_session(struct exchange_list *sl, pid_t pid) {
       kfree(session);
       break;
     }
-  }
-  spin_unlock(&sl->lock);
-}
-
-static void remove_sessions(struct exchange_list *sl) {
-  struct exchange_session *session, *tmp;
-
-  spin_lock(&sl->lock);
-  list_for_each_entry_safe(session, tmp, &sl->head, list) {
-    list_del(&session->list);
-    kfree(session);
   }
   spin_unlock(&sl->lock);
 }
@@ -339,20 +390,20 @@ static struct client_data *find_client_by_pid(struct client_hashtable *table,
   return pos;
 }
 
-static int
-apply_client_action(struct client_hashtable *table, struct request *req,
-                    void (*action)(struct client_data *, struct request *)) {
+static int apply_clients_action_for_request(struct client_hashtable *table,
+                                            struct request *req,
+                                            void (*action)(struct client_data *,
+                                                           struct request *)) {
   int bkt = 0;
   int count = 0;
-  struct client_data *pos = NULL;
+  struct client_data *client = NULL;
 
   spin_lock(&table->lock);
-  hash_for_each(table->table, bkt, pos, node) {
-    action(pos, req);
+  hash_for_each(table->table, bkt, client, node) {
+    action(client, req);
     count = +1;
   }
   spin_unlock(&table->lock);
-  pr_info("bkt=%d, count=%d\n", bkt, count);
   return count;
 }
 
@@ -362,14 +413,22 @@ static void enqueue_request(struct exchange_list *rq, struct request *req) {
   spin_unlock(&rq->lock);
 }
 
-static void copy_enqueue_request(struct client_data *client,
+static void enqueue_output(struct exchange_list *rq,
+                           struct output_data *output_data) {
+  spin_lock(&rq->lock);
+  list_add_tail(&output_data->list, &rq->head);
+  spin_unlock(&rq->lock);
+}
+
+static void make_output_responce(struct client_data *client,
                                  struct request *req) {
-  struct request *copy_req = kmalloc(sizeof(struct request), GFP_KERNEL);
 
-  copy_req->pid = req->pid;
-  memcpy(copy_req->data, req->data, EXCHANGE_BUFFER_SIZE);
+  struct output_data *data = kmalloc(sizeof(struct output_data), GFP_KERNEL);
+  data->position = 0;
+  data->size = req->size;
+  memcpy(data->data, req->data, req->size);
 
-  enqueue_request(&client->output_queue, copy_req);
+  enqueue_output(&client->output_queue, data);
 }
 
 static struct request *dequeue_request(struct exchange_list *rq) {
@@ -383,6 +442,19 @@ static struct request *dequeue_request(struct exchange_list *rq) {
   spin_unlock(&rq->lock);
 
   return req;
+}
+
+static struct output_data *dequeue_output(struct exchange_list *rq) {
+  struct output_data *output = NULL;
+
+  spin_lock(&rq->lock);
+  if (!list_empty(&rq->head)) {
+    output = list_first_entry(&rq->head, struct output_data, list);
+    list_del(&output->list);
+  }
+  spin_unlock(&rq->lock);
+
+  return output;
 }
 
 static int device_open(struct inode *inode, struct file *filp) {
@@ -416,22 +488,29 @@ static ssize_t device_read(struct file *filp, char __user *buffer, size_t count,
   pr_info("Device read\n");
   struct exchange_device *device = filp->private_data;
 
-  struct request *req = NULL;
-
   struct client_data *client =
       find_client_by_pid(&device->clients, current->pid);
-  if (client)
-    req = dequeue_request(&client->output_queue);
+  if (client) {
+    if (client->output == NULL)
+      client->output = dequeue_output(&client->output_queue);
+  }
 
-  if (!req)
+  if (!client->output)
     return 0;
 
-  ssize_t bytes_read = umin(count, strnlen(req->data, EXCHANGE_BUFFER_SIZE));
+  size_t bytes_read =
+      umin(count, client->output->size - client->output->position);
 
-  if (copy_to_user(buffer, req->data, bytes_read))
+  if (copy_to_user(buffer, client->output->data, bytes_read))
     return -EFAULT;
 
-  kfree(req);
+  client->output->position += bytes_read;
+
+  if (client->output->position == client->output->size) {
+    kfree(client->output);
+    client->output = NULL;
+  }
+
   return bytes_read;
 }
 
@@ -439,7 +518,7 @@ static void unicast_request(struct request *req) {
   struct client_data *client = NULL;
   client = find_client_by_pid(&device.clients, req->pid);
   if (client) {
-    enqueue_request(&client->output_queue, req);
+    make_output_responce(client, req);
     add_request_statistic(&device.statistics, 1);
   } else {
     add_drop_statistic(&device.statistics, 1);
@@ -447,7 +526,8 @@ static void unicast_request(struct request *req) {
 }
 
 static void broadcast_request(struct request *req) {
-  int ret = apply_client_action(&device.clients, req, copy_enqueue_request);
+  int ret = apply_clients_action_for_request(&device.clients, req,
+                                             make_output_responce);
   if (ret > 0)
     add_request_statistic(&device.statistics, ret);
   else
@@ -458,13 +538,16 @@ static void process_request(struct work_struct *work) {
   struct request *req = dequeue_request(&device.input_queue);
   if (req) {
     pr_info("request handle client %d\n", req->pid);
+
     switch (work_mode) {
     case EXCHANGE_UNICAST:
       unicast_request(req);
       break;
+
     case EXCHANGE_BROADCAST:
       broadcast_request(req);
       break;
+
     default:
       break;
     }
@@ -480,27 +563,55 @@ static ssize_t device_write(struct file *filp, const char __user *buffer,
   if (!req)
     return -ENOMEM;
 
-  if (copy_from_user(req->data, buffer, count))
+  size_t bytes_write = umin(count, EXCHANGE_BUFFER_SIZE);
+  if (copy_from_user(req->data, buffer, bytes_write))
     return -EFAULT;
 
   req->pid = current->pid;
+  req->size = bytes_write;
 
   enqueue_request(&device->input_queue, req);
 
   INIT_WORK(&req->work, process_request);
   queue_work(device->worker_wq, &req->work);
 
-  return count;
+  return bytes_write;
 }
 
 static long device_ioctl(struct file *file, unsigned int cmd,
                          unsigned long arg) {
+  struct exchange_device *device = file->private_data;
+
   switch (cmd) {
   case EXCHANGE_IOCTL_GET_WORK_MODE: {
     if (copy_to_user((void __user *)arg, &work_mode, sizeof(int)) != 0)
       return -EFAULT;
 
     pr_info("ioctl: mode is %d\n", work_mode);
+    break;
+  }
+
+  case EXCHANGE_IOCTL_REQUEST: {
+    struct message_request message;
+    if (copy_from_user(&message, (void __user *)arg,
+                       sizeof(struct message_request)) != 0) {
+      return -EFAULT;
+    }
+
+    struct request *req = kmalloc(sizeof(struct request), GFP_KERNEL);
+    if (!req)
+      return -ENOMEM;
+
+    req->pid = message.pid;
+    req->size = umin(message.size, EXCHANGE_BUFFER_SIZE);
+    memcpy(req->data, message.data, req->size);
+
+    enqueue_request(&device->input_queue, req);
+
+    INIT_WORK(&req->work, process_request);
+    queue_work(device->worker_wq, &req->work);
+
+    pr_info("ioctl: message to %d\n", message.pid);
     break;
   }
 
@@ -569,10 +680,7 @@ static void __exit exchange_exit(void) {
   sysfs_unregister();
   procfs_unregister();
 
-  remove_sessions(&device.active_sessions);
-
-  flush_workqueue(device.worker_wq);
-  destroy_workqueue(device.worker_wq);
+  free_device(&device);
 
   device_destroy(exchange_class, exchange_dev);
   cdev_del(&exchange_cdev);
