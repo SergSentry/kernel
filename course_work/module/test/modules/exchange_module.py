@@ -13,6 +13,8 @@ class ExchangeModule:
     SYSFS_PARAMETER = "statistics"
     SYSFS_PATH = f"/sys/kernel/{DEVICE_NAME}/{SYSFS_PARAMETER}"
     DEFAULT_WORK_MODE  = 0
+    WORK_MODE_UNICAST = 0
+    WORK_MODE_BROADCAST = 1
     DEVICE_IOCTL_MAGIC = ord('>')
     MODULE_PARAM_WORK_MODE = 'work_mode'
     EXCHANGE_IOCTL_GET_WORK_MODE = 0x80043E00
@@ -73,9 +75,10 @@ class ExchangeModule:
         result = subprocess.run([f'insmod {module_full_path}'], stdout=subprocess.PIPE, shell=True)
         return result.stderr is not None
 
-    def _load(self, path: str, work_mode:int) -> bool:
+    def load(self, work_mode:int) -> bool:
         self.__unload()
-        module_full_path = os.path.abspath(f"{path}/{ExchangeModule.MODULE_FILE_NAME}")
+
+        module_full_path = os.path.abspath(f"{self.__path}/{ExchangeModule.MODULE_FILE_NAME}")
         module_param = f"{ExchangeModule.MODULE_PARAM_WORK_MODE}={work_mode}"
         result = subprocess.run([f'insmod {module_full_path} {module_param}'], stdout=subprocess.PIPE, shell=True)
         return result.stderr is not None

@@ -115,50 +115,65 @@ class TestExchangeModule(unittest.TestCase):
         '''
         exchangeModule = ExchangeModule(path=MODULE_PATH)
         
-        exchangeModule._load(path=MODULE_PATH, work_mode=1)
+        exchangeModule.load(ExchangeModule.WORK_MODE_BROADCAST)
         self.assertTrue(exchangeModule.has_loaded())
         
         target_data = exchangeModule._read_param(ExchangeModule.MODULE_PARAM_WORK_MODE)
-        self.assertEqual(1, target_data)
+        self.assertEqual(ExchangeModule.WORK_MODE_BROADCAST, target_data)
 
-    def test_dev_read_messages(self):
+    def test_dev_unicast_mode_read_messages_single_thread(self):
         '''
-        Checking message for read device 
+        Checking unicast write and read message 
         '''
+        message = "hello"
         with ExchangeModule(path=MODULE_PATH) as exchangeModule:
             self.assertTrue(exchangeModule.has_device_exist())
 
-            Dmesg.clear()
             with OsFile(ExchangeModule.DEVICE_PATH) as device:
                 self.check_open()
 
-                response = device.read(10)
-                sleep(1)
+                device.write(message.encode())
+                sleep(2)
+                _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_write", last=1))
+                self.assertEqual("device_write", func.strip())
+                self.assertEqual("Device write", msg.strip())  
+                
+                response = device.read(10).decode()
+                self.assertEqual(message, response)
+
                 _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_read", last=1))
                 self.assertEqual("device_read", func.strip())
                 self.assertEqual("Device read", msg.strip())
 
             self.check_close()
 
-    def test_dev_write_messages(self):
+    def test_dev_broadcast_mode_read_messages_single_thread(self):
         '''
-        Checking message for write device 
+        Checking broadcast write and read message 
         '''
-        with ExchangeModule(path=MODULE_PATH) as exchangeModule:
-            self.assertTrue(exchangeModule.has_device_exist())
-            
-            Dmesg.clear()
-            with OsFile(ExchangeModule.DEVICE_PATH) as device:
-                self.check_open()
+        message = "hello"
+        exchangeModule = ExchangeModule(path=MODULE_PATH)
+        exchangeModule.load(ExchangeModule.WORK_MODE_BROADCAST)
+        self.assertTrue(exchangeModule.has_device_exist())
+
+        with OsFile(ExchangeModule.DEVICE_PATH) as device:
+            self.check_open()
+
+            device.write(message.encode())
+            sleep(2)
+            _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_write", last=1))
+            self.assertEqual("device_write", func.strip())
+            self.assertEqual("Device write", msg.strip())
+
+            response = device.read(10).decode()
+            self.assertEqual(message, response)
                 
-                device.write("hello".encode())
-                sleep(1)
-                _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_write", last=1))
-                self.assertEqual("device_write", func.strip())
-                self.assertEqual("Device write", msg.strip())  
-                
-            self.check_close()
-    
+            _, func, msg = next(Dmesg.get_messages_by_func(ExchangeModule.MODULE_NAME, "device_read", last=1))
+            self.assertEqual("device_read", func.strip())
+            self.assertEqual("Device read", msg.strip())
+
+        self.check_close()
+   
     def test_ioctl_get_work_mode(self):
         '''
         test ioctl function get_work_mode
