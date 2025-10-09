@@ -44,6 +44,13 @@ struct client_data {
   struct hlist_node node;
 };
 
+struct request {
+  pid_t pid;
+  char data[EXCHANGE_BUFFER_SIZE];
+  struct work_struct work;
+  struct list_head list;
+};
+
 struct client_hashtable {
   DECLARE_HASHTABLE(table, 10);
   spinlock_t lock;
@@ -59,6 +66,8 @@ struct exchange_device {
   struct exchange_list active_sessions;
   struct statistics_data statistics;
   struct client_hashtable clients;
+  struct exchange_list input_queue;
+  struct workqueue_struct *worker_wq;
 };
 
 static struct exchange_device device;
@@ -112,15 +121,40 @@ static void init_statistic(struct statistics_data *sd) {
   spin_lock_init(&sd->lock);
 }
 
-void init_client_hashtable(struct client_hashtable *clients) {
+static void init_client_hashtable(struct client_hashtable *clients) {
   hash_init(clients->table);
   spin_lock_init(&clients->lock);
 }
 
-void setup_device(struct exchange_device *dev) {
+static int init_workqueue(struct exchange_device *dev) {
+  dev->worker_wq = create_singlethread_workqueue("server_worker");
+  if (!dev->worker_wq) {
+    pr_err("Memory allocation for workqueue failed!\n");
+    return -ENOMEM;
+  }
+
+  return 0;
+}
+
+static int setup_device(struct exchange_device *dev) {
   init_client_hashtable(&dev->clients);
   init_exchange_list(&dev->active_sessions);
+  init_exchange_list(&dev->input_queue);
   init_statistic(&dev->statistics);
+  return init_workqueue(dev);
+}
+
+static void add_request_statistic(struct statistics_data *sd,
+                                  unsigned int count) {
+  spin_lock(&sd->lock);
+  sd->total_requests += count;
+  spin_unlock(&sd->lock);
+}
+
+static void add_drop_statistic(struct statistics_data *sd, unsigned int count) {
+  spin_lock(&sd->lock);
+  sd->dropped_requests += count;
+  spin_unlock(&sd->lock);
 }
 
 static void add_session(struct exchange_list *sl, pid_t pid) {
@@ -188,7 +222,7 @@ static ssize_t proc_write(struct file *file, const char __user *buf,
   list_for_each_entry_safe(session, tmp, &device.active_sessions.head, list) {
     list_del(&session->list);
     kfree(session);
-  };
+  }
   spin_unlock(&device.active_sessions.lock);
 
   return count;
@@ -260,7 +294,7 @@ static struct client_data *add_new_client(struct client_hashtable *table,
                                           pid_t pid) {
   struct client_data *new_client =
       kmalloc(sizeof(struct client_data), GFP_KERNEL);
-      
+
   if (!new_client)
     return ERR_PTR(-ENOMEM);
 
@@ -305,6 +339,52 @@ static struct client_data *find_client_by_pid(struct client_hashtable *table,
   return pos;
 }
 
+static int
+apply_client_action(struct client_hashtable *table, struct request *req,
+                    void (*action)(struct client_data *, struct request *)) {
+  int bkt = 0;
+  int count = 0;
+  struct client_data *pos = NULL;
+
+  spin_lock(&table->lock);
+  hash_for_each(table->table, bkt, pos, node) {
+    action(pos, req);
+    count = +1;
+  }
+  spin_unlock(&table->lock);
+  pr_info("bkt=%d, count=%d\n", bkt, count);
+  return count;
+}
+
+static void enqueue_request(struct exchange_list *rq, struct request *req) {
+  spin_lock(&rq->lock);
+  list_add_tail(&req->list, &rq->head);
+  spin_unlock(&rq->lock);
+}
+
+static void copy_enqueue_request(struct client_data *client,
+                                 struct request *req) {
+  struct request *copy_req = kmalloc(sizeof(struct request), GFP_KERNEL);
+
+  copy_req->pid = req->pid;
+  memcpy(copy_req->data, req->data, EXCHANGE_BUFFER_SIZE);
+
+  enqueue_request(&client->output_queue, copy_req);
+}
+
+static struct request *dequeue_request(struct exchange_list *rq) {
+  struct request *req = NULL;
+
+  spin_lock(&rq->lock);
+  if (!list_empty(&rq->head)) {
+    req = list_first_entry(&rq->head, struct request, list);
+    list_del(&req->list);
+  }
+  spin_unlock(&rq->lock);
+
+  return req;
+}
+
 static int device_open(struct inode *inode, struct file *filp) {
   pr_info("Device opened\n");
 
@@ -315,9 +395,8 @@ static int device_open(struct inode *inode, struct file *filp) {
   struct client_data *current_client =
       find_client_by_pid(&device.clients, current->pid);
 
-  if (!current_client) {
+  if (!current_client)
     current_client = add_new_client(&device.clients, current->pid);
-  }
 
   return 0;
 }
@@ -335,12 +414,82 @@ static int device_release(struct inode *inode, struct file *filp) {
 static ssize_t device_read(struct file *filp, char __user *buffer, size_t count,
                            loff_t *f_pos) {
   pr_info("Device read\n");
-  return 0;
+  struct exchange_device *device = filp->private_data;
+
+  struct request *req = NULL;
+
+  struct client_data *client =
+      find_client_by_pid(&device->clients, current->pid);
+  if (client)
+    req = dequeue_request(&client->output_queue);
+
+  if (!req)
+    return 0;
+
+  ssize_t bytes_read = umin(count, strnlen(req->data, EXCHANGE_BUFFER_SIZE));
+
+  if (copy_to_user(buffer, req->data, bytes_read))
+    return -EFAULT;
+
+  kfree(req);
+  return bytes_read;
+}
+
+static void unicast_request(struct request *req) {
+  struct client_data *client = NULL;
+  client = find_client_by_pid(&device.clients, req->pid);
+  if (client) {
+    enqueue_request(&client->output_queue, req);
+    add_request_statistic(&device.statistics, 1);
+  } else {
+    add_drop_statistic(&device.statistics, 1);
+  }
+}
+
+static void broadcast_request(struct request *req) {
+  int ret = apply_client_action(&device.clients, req, copy_enqueue_request);
+  if (ret > 0)
+    add_request_statistic(&device.statistics, ret);
+  else
+    add_drop_statistic(&device.statistics, 1);
+}
+
+static void process_request(struct work_struct *work) {
+  struct request *req = dequeue_request(&device.input_queue);
+  if (req) {
+    pr_info("request handle client %d\n", req->pid);
+    switch (work_mode) {
+    case EXCHANGE_UNICAST:
+      unicast_request(req);
+      break;
+    case EXCHANGE_BROADCAST:
+      broadcast_request(req);
+      break;
+    default:
+      break;
+    }
+  }
 }
 
 static ssize_t device_write(struct file *filp, const char __user *buffer,
                             size_t count, loff_t *f_pos) {
   pr_info("Device write\n");
+  struct exchange_device *device = filp->private_data;
+
+  struct request *req = kmalloc(sizeof(struct request), GFP_KERNEL);
+  if (!req)
+    return -ENOMEM;
+
+  if (copy_from_user(req->data, buffer, count))
+    return -EFAULT;
+
+  req->pid = current->pid;
+
+  enqueue_request(&device->input_queue, req);
+
+  INIT_WORK(&req->work, process_request);
+  queue_work(device->worker_wq, &req->work);
+
   return count;
 }
 
@@ -350,6 +499,7 @@ static long device_ioctl(struct file *file, unsigned int cmd,
   case EXCHANGE_IOCTL_GET_WORK_MODE: {
     if (copy_to_user((void __user *)arg, &work_mode, sizeof(int)) != 0)
       return -EFAULT;
+
     pr_info("ioctl: mode is %d\n", work_mode);
     break;
   }
@@ -409,10 +559,10 @@ static int __init exchange_init(void) {
 
   device_create(exchange_class, NULL, exchange_dev, NULL, DEVICE_NAME);
 
-  setup_device(&device);
+  ret = setup_device(&device);
 
   pr_info("init\n");
-  return 0;
+  return ret;
 }
 
 static void __exit exchange_exit(void) {
@@ -420,6 +570,9 @@ static void __exit exchange_exit(void) {
   procfs_unregister();
 
   remove_sessions(&device.active_sessions);
+
+  flush_workqueue(device.worker_wq);
+  destroy_workqueue(device.worker_wq);
 
   device_destroy(exchange_class, exchange_dev);
   cdev_del(&exchange_cdev);
