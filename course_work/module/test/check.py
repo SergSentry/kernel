@@ -4,7 +4,10 @@ import os
 import time
 import stat
 import unittest
+import threading
 import subprocess
+import string
+import random
 from time import sleep
 
 from test.modules.exchange_module import ExchangeModule
@@ -213,5 +216,34 @@ class TestExchangeModule(unittest.TestCase):
                 with open(ExchangeModule.SYSFS_PATH, "rt") as sysfs_param:
                     values = sysfs_param.readlines()
                     self.assertEqual(2, len(values))
-                    self.assertEqual('Total requests: 0\n', values[0])
-                    self.assertEqual('Dropped requests: 0\n', values[1])
+                    self.assertEqual('0\n', values[0])
+                    self.assertEqual('0\n', values[1])
+
+    def generate_random_message(self, length=10):
+        letters = string.ascii_letters
+        return ''.join(random.choice(letters) for _ in range(length))
+
+    def client_operation(self, client_id):
+        message = self.generate_random_message()
+        with OsFile(ExchangeModule.DEVICE_PATH) as device:
+            buf = message.encode();
+            device.write(buf)
+            sleep(1)
+            response = device.read(len(buf)).decode()
+            self.assertEqual(message, response.strip())
+
+    def test_multithread_read_write(self):
+        '''
+        test multithread write and read
+        '''
+        with ExchangeModule(path=MODULE_PATH) as exchangeModule:
+            self.assertTrue(exchangeModule.has_device_exist())
+            
+            threads = []
+            for i in range(10):
+                t = threading.Thread(target=self.client_operation, args=(i,))
+                threads.append(t)
+                t.start()
+
+            for thread in threads:
+                thread.join()
