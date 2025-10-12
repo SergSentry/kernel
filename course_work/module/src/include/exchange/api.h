@@ -27,9 +27,9 @@ enum exchange_mode {
 };
 
 struct message_request {
-  pid_t pid;
+  unsigned int pid;
   char data[EXCHANGE_BUFFER_SIZE];
-  size_t size;
+  unsigned int size;
 };
 
 enum exchange_ioctl_commands {

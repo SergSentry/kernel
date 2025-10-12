@@ -303,8 +303,7 @@ static ssize_t show_stats(struct kobject *kobj, struct kobj_attribute *attr,
                           char *buf) {
   ssize_t res;
   spin_lock(&device.statistics.lock);
-  res = sprintf(buf, "%u\n%u\n",
-                device.statistics.total_requests,
+  res = sprintf(buf, "%u\n%u\n", device.statistics.total_requests,
                 device.statistics.dropped_requests);
   spin_unlock(&device.statistics.lock);
   return res;
