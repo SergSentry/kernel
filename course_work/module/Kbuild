@@ -1,0 +1,3 @@
+MODULE_NAME := exchange
+
+obj-m += src/$(MODULE_NAME).o
