@@ -1,0 +1,31 @@
+# VS code
+.vscode
+
+# Object files
+*.o
+*.ko
+*.elf
+
+# Linker output
+*.map
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.a
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# Python modules
+.pytest_cache
+__pycache__
+
+ioctl
